@@ -39,14 +39,12 @@ def sample_config(**overrides: object) -> Config:
     return Config(**values)  # type: ignore[arg-type]
 
 
-def customer(customer_id: str, tags: list[str], created_at: str, first: str, last: str) -> dict:
+def customer(customer_id: str, tags: list[str], created_at: str) -> dict:
     return {
         "node": {
             "id": f"gid://shopify/Customer/{customer_id}",
             "tags": tags,
             "createdAt": created_at,
-            "firstName": first,
-            "lastName": last,
         }
     }
 
@@ -162,8 +160,8 @@ class MockApiTests(unittest.TestCase):
                     200,
                     json=customers_payload(
                         [
-                            customer("1", ["form-early-access", "early access targa"], "2026-06-01T12:00:00Z", "Ada", "Lovelace"),
-                            customer("2", ["form-early-access"], "2026-06-02T12:00:00Z", "Grace", "Hopper"),
+                            customer("1", ["form-early-access", "early access targa"], "2026-06-01T12:00:00Z"),
+                            customer("2", ["form-early-access"], "2026-06-02T12:00:00Z"),
                         ],
                         has_next=True,
                         cursor="cursor-1",
@@ -174,9 +172,9 @@ class MockApiTests(unittest.TestCase):
                 200,
                 json=customers_payload(
                     [
-                        customer("3", ["newsletter"], "2026-06-03T12:00:00Z", "Buyer", "Normal"),
-                        customer("4", ["form-early-access"], "2026-06-04T12:00:00Z", "Lin", "Targa"),
-                        customer("5", ["form-early-access"], "2019-01-01T00:00:00Z", "Old", "Account"),
+                        customer("3", ["newsletter"], "2026-06-03T12:00:00Z"),
+                        customer("4", ["form-early-access"], "2026-06-04T12:00:00Z"),
+                        customer("5", ["form-early-access"], "2019-01-01T00:00:00Z"),
                     ],
                     has_next=False,
                     cursor="cursor-2",
@@ -209,7 +207,7 @@ class MockApiTests(unittest.TestCase):
         self.assertIn("ha già il tag «early access targa»", text)
         self.assertIn("senza il tag del modulo", text)
         self.assertIn("fuori dalla finestra", text)
-        self.assertIn("Errore sul cliente Grace Hopper", text)
+        self.assertIn("Errore sul cliente gid://shopify/Customer/2", text)
         self.assertIn("errori 1", text)
 
     def test_retries_throttled_then_tags(self) -> None:
@@ -252,7 +250,7 @@ class MockApiTests(unittest.TestCase):
             return httpx.Response(
                 200,
                 json=customers_payload(
-                    [customer("9", ["form-early-access"], "2026-06-01T00:00:00Z", "A", "B")],
+                    [customer("9", ["form-early-access"], "2026-06-01T00:00:00Z")],
                     has_next=False,
                     cursor=None,
                 ),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from early_access_tagger.config import Config, ConfigError, load_config, parse_shopify_datetime
@@ -13,6 +13,7 @@ from early_access_tagger.graphql_client import (
     TAGS_ADD_MUTATION,
     ShopifyGraphQLClient,
     ShopifyRequestError,
+    resolve_access_token,
 )
 
 logger = logging.getLogger("early_access_tagger")
@@ -98,6 +99,8 @@ def run(
     *,
     client: ShopifyGraphQLClient | None = None,
     sleep=time.sleep,
+    transport=None,
+    trust_env: bool = True,
 ) -> RunSummary:
     """Page through matching customers, then add the target tag. One bad customer does not stop the run."""
     search = build_customer_search(
@@ -122,7 +125,21 @@ def run(
 
     owns_client = client is None
     if client is None:
-        client = ShopifyGraphQLClient(config, sleep=sleep)
+        try:
+            token = resolve_access_token(
+                config,
+                sleep=sleep,
+                transport=transport,
+                trust_env=trust_env,
+            )
+        except ShopifyRequestError as exc:
+            raise RunFailed(str(exc)) from exc
+        client = ShopifyGraphQLClient(
+            replace(config, access_token=token, client_secret=""),
+            sleep=sleep,
+            transport=transport,
+            trust_env=trust_env,
+        )
     try:
         matched, excluded = _collect_customers(client, config, search)
         logger.info("Trovati %d nuovi clienti", len(matched))
@@ -289,13 +306,7 @@ def _add_tag(client: ShopifyGraphQLClient, customer_id: str, target_tag: str) ->
 
 
 def customer_label(node: dict) -> str:
-    first = str(node.get("firstName") or "").strip()
-    last = str(node.get("lastName") or "").strip()
-    name = " ".join(part for part in (first, last) if part)
-    customer_id = str(node.get("id") or "sconosciuto")
-    if name:
-        return f"{name} ({customer_id})"
-    return customer_id
+    return str(node.get("id") or "sconosciuto")
 
 
 def _quote_search_value(value: str) -> str:

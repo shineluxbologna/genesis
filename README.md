@@ -23,19 +23,31 @@ In Shopify Admin crea il segmento a mano, una volta sola: **Clienti → Segmenti
 
 ## Cosa serve su Shopify
 
-Una custom app nello stesso negozio, con questi scope Admin API:
+Un'app nel Dev Dashboard, installata sul negozio (SHINELUX), con questi scope e nient'altro:
 
 - `read_customers` per leggere i clienti
 - `write_customers` per aggiungere il tag
 
-Come crearla:
+Le app del Dev Dashboard non consegnano un token permanente. A ogni esecuzione lo script chiede un token nuovo con Client ID e Client secret. Il token dura 24 ore (`expires_in` 86399): per un giro al giorno ne basta uno. Non va copiato da nessuna parte.
 
-1. In Shopify Admin apri **Impostazioni → App e canali di vendita**.
-2. Se non vedi **Sviluppa app**, abilita lo sviluppo di app personalizzate per il negozio.
-3. Crea un'app, per esempio «Early access tagger».
-4. Nella configurazione Admin API seleziona `read_customers` e `write_customers`, poi salva.
-5. Installa l'app nel negozio e rivela il token Admin. Shopify lo mostra una sola volta: copialo in un posto sicuro, non nel codice e non in una chat.
-6. Il dominio del negozio è quello che finisce con `.myshopify.com` (lo vedi nell'indirizzo dell'admin).
+Nel modulo di creazione dell'app, campo per campo:
+
+1. Apri il [Dev Dashboard](https://dev.shopify.com/dashboard) e crea un'app.
+2. Nome app: `Early access tagger`.
+3. Nome versione: lascialo vuoto.
+4. App URL: `https://shopify.dev/apps/default-app-home`.
+5. Lascia deselezionato **Incorpora l'app**.
+6. URL di reindirizzamento: lasciali vuoti.
+7. Lascia deselezionata l'installazione legacy.
+8. Scope: esattamente `read_customers,write_customers`.
+9. Crea l'app, poi installala sul negozio SHINELUX.
+10. Apri **Settings** dell'app e copia **Client ID** e **Client secret**.
+
+Quei due valori vanno nei secret di GitHub, oppure nel file `.env` se lanci lo script sul computer. Lo script li scambia da solo con un token all'inizio di ogni esecuzione.
+
+`SHOPIFY_SHOP` è il dominio completo, senza `https://`. Per SHINELUX è `shinelux.myshopify.com`. Non scrivere solo `shinelux` e non aggiungere `.myshopify.com` un'altra volta: lo script usa il testo così com'è.
+
+Se hai già un token permanente `shpat_` di una custom app vecchia, puoi lasciarlo in `SHOPIFY_ADMIN_ACCESS_TOKEN` e non compilare Client ID e Client secret. Con entrambi i percorsi compilati, lo script usa Client ID e Client secret.
 
 ## Esecuzione sul tuo computer
 
@@ -50,10 +62,12 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Apri `.env` e sostituisci i due valori obbligatori:
+Apri `.env` e sostituisci:
 
-- `SHOPIFY_SHOP`, per esempio `nome-negozio.myshopify.com` (senza `https://`)
-- `SHOPIFY_ADMIN_ACCESS_TOKEN`, il token della custom app
+- `SHOPIFY_SHOP` con il dominio completo, per SHINELUX `shinelux.myshopify.com` (senza `https://`)
+- `SHOPIFY_CLIENT_ID` e `SHOPIFY_CLIENT_SECRET` copiati da **Settings** dell'app nel Dev Dashboard
+
+`SHOPIFY_ADMIN_ACCESS_TOKEN` resta vuoto, a meno che tu non stia usando un token permanente al posto della coppia Client ID / Client secret.
 
 Le date e i tag hanno già un default sensato (dal 1 gennaio 2026 al 31 dicembre 2027, tag `form-early-access` e `early access targa`). Cambiali se la campagna è un'altra. Le date sono in UTC, formato ISO 8601. La finestra è inclusiva: entra chi è stato creato esattamente all'inizio o alla fine. Se scrivi solo il giorno, per esempio `2026-03-31`, conta l'intera giornata UTC.
 
@@ -71,7 +85,7 @@ Nel terminale, in italiano, compaiono tra le altre queste righe:
 - un errore per ogni cliente che Shopify ha rifiutato
 - un riepilogo finale
 
-Se manca il token o Shopify rifiuta l'accesso, il programma si chiude con un errore e un codice diverso da zero. Se invece l'esecuzione arriva in fondo e solo qualche cliente fallisce, il codice è zero: quei nomi restano nel riepilogo, alla riga `errori`.
+Se mancano le credenziali o Shopify rifiuta l'accesso, il programma si chiude con un errore e un codice diverso da zero. Se invece l'esecuzione arriva in fondo e solo qualche cliente fallisce, il codice è zero: quegli id restano nel riepilogo, alla riga `errori`. Nei log non compaiono né il Client secret né il token.
 
 Per controllare: apri un cliente appena taggato in Shopify Admin e verifica che tra i tag ci sia `early access targa`.
 
@@ -92,9 +106,11 @@ Lo schedule parte solo dopo che questo file è su `main`. Il workflow si chiama 
 1. Apri il repository su GitHub.
 2. In alto, **Settings**.
 3. A sinistra, **Secrets and variables**, poi **Actions**.
-4. Scheda **Secrets**, pulsante **New repository secret**. Crea questi due, uno alla volta:
-   - Nome `SHOPIFY_SHOP`, valore `nome-negozio.myshopify.com`
-   - Nome `SHOPIFY_ADMIN_ACCESS_TOKEN`, valore il token della custom app
+4. Scheda **Secrets**, pulsante **New repository secret**. Creane uno alla volta:
+   - Nome `SHOPIFY_SHOP`, valore `shinelux.myshopify.com`
+   - Nome `SHOPIFY_CLIENT_ID`, valore il Client ID copiato da **Settings**
+   - Nome `SHOPIFY_CLIENT_SECRET`, valore il Client secret copiato da **Settings**
+   - `SHOPIFY_ADMIN_ACCESS_TOKEN` è facoltativo. Crearlo solo se usi un token permanente e non la coppia Client ID / Client secret. Lo script, se trova Client ID e Client secret, chiede il token da solo.
 5. Scheda **Variables**, pulsante **New repository variable**. Non sono segreti: sono la finestra e i tag. Se non le crei, valgono i default del programma.
    - `START_DATE` = `2026-01-01T00:00:00Z`
    - `END_DATE` = `2027-12-31T23:59:59Z`

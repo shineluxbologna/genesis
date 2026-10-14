@@ -23,8 +23,6 @@ query EarlyAccessCustomers($query: String!, $cursor: String) {
         id
         tags
         createdAt
-        firstName
-        lastName
       }
     }
     pageInfo {
@@ -62,8 +60,12 @@ class ShopifyRequestError(RuntimeError):
         self.status_code = status_code
 
 
-def redact(text: str) -> str:
-    return _TOKEN_RE.sub("shpat_[redacted]", text)
+def redact(text: str, secrets: tuple[str, ...] = ()) -> str:
+    cleaned = _TOKEN_RE.sub("shpat_[redacted]", text)
+    for secret in secrets:
+        if secret and len(secret) >= 4:
+            cleaned = cleaned.replace(secret, "[redacted]")
+    return cleaned
 
 
 def is_throttled(payload: dict[str, Any] | None) -> bool:
@@ -168,6 +170,202 @@ def retry_after_seconds(headers: httpx.Headers | dict[str, str]) -> float | None
         return None
 
 
+def resolve_access_token(
+    config: Config,
+    *,
+    sleep: Sleep = time.sleep,
+    transport: httpx.BaseTransport | None = None,
+    trust_env: bool = True,
+) -> str:
+    """Use a client-credentials token when the Dev Dashboard pair is set, otherwise the static token."""
+    if config.uses_client_credentials:
+        return fetch_client_credentials_token(
+            config,
+            sleep=sleep,
+            transport=transport,
+            trust_env=trust_env,
+        )
+    if config.access_token:
+        return config.access_token
+    raise ShopifyRequestError(
+        "Manca l'accesso a Shopify. Imposta SHOPIFY_CLIENT_ID e SHOPIFY_CLIENT_SECRET, "
+        "oppure SHOPIFY_ADMIN_ACCESS_TOKEN.",
+        retryable=False,
+    )
+
+
+def fetch_client_credentials_token(
+    config: Config,
+    *,
+    sleep: Sleep = time.sleep,
+    transport: httpx.BaseTransport | None = None,
+    trust_env: bool = True,
+) -> str:
+    """POST one client-credentials grant. The token lasts 24 hours, so one fetch per run is enough."""
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    secrets = (config.client_secret,)
+    logger.info(
+        "Richiedo un token di accesso per %s. Dura 24 ore: una richiesta per esecuzione.",
+        config.shop,
+    )
+    last_message = "Richiesta del token non riuscita."
+    last_status: int | None = None
+    with httpx.Client(
+        timeout=httpx.Timeout(config.timeout_seconds),
+        follow_redirects=False,
+        trust_env=trust_env,
+        transport=transport,
+        headers={"Accept": "application/json", "User-Agent": "early-access-tagger/1.0"},
+    ) as http:
+        for attempt in range(1, config.max_retries + 1):
+            try:
+                response = http.post(
+                    config.token_url,
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": config.client_id,
+                        "client_secret": config.client_secret,
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+            except httpx.TimeoutException:
+                last_message = "Timeout durante la richiesta del token"
+                last_status = None
+                if _sleep_before_retry(
+                    attempt,
+                    config.max_retries,
+                    last_message,
+                    sleep,
+                    status_code=None,
+                    payload=None,
+                    transport_error=True,
+                ):
+                    continue
+                raise ShopifyRequestError(last_message, retryable=True) from None
+            except httpx.TransportError as exc:
+                last_message = f"Endpoint del token irraggiungibile: {redact(str(exc), secrets)}"
+                last_status = None
+                if _sleep_before_retry(
+                    attempt,
+                    config.max_retries,
+                    last_message,
+                    sleep,
+                    status_code=None,
+                    payload=None,
+                    transport_error=True,
+                ):
+                    continue
+                raise ShopifyRequestError(last_message, retryable=True) from exc
+
+            payload = _read_json(response)
+            last_status = response.status_code
+            if should_retry(
+                status_code=response.status_code,
+                payload=payload,
+                attempt=attempt,
+                max_retries=config.max_retries,
+            ):
+                reason = _failure_reason(response.status_code, payload)
+                last_message = reason
+                _sleep_before_retry(
+                    attempt,
+                    config.max_retries,
+                    reason,
+                    sleep,
+                    status_code=response.status_code,
+                    payload=payload,
+                    transport_error=False,
+                    retry_after=retry_after_seconds(response.headers),
+                    forced=True,
+                )
+                continue
+
+            if response.status_code in (408, 429) or 500 <= response.status_code <= 599:
+                raise ShopifyRequestError(
+                    redact(
+                        f"{_failure_reason(response.status_code, payload)}. "
+                        f"Tentativi esauriti ({config.max_retries}).",
+                        secrets,
+                    ),
+                    retryable=True,
+                    status_code=response.status_code,
+                )
+
+            token = ""
+            if response.status_code == 200 and isinstance(payload, dict):
+                raw_token = payload.get("access_token")
+                if isinstance(raw_token, str):
+                    token = raw_token.strip()
+            if token:
+                logger.info("Token di accesso ottenuto per questa esecuzione.")
+                return token
+
+            raise ShopifyRequestError(
+                redact(_token_failure_message(response.status_code, payload), secrets),
+                retryable=False,
+                status_code=response.status_code,
+            )
+
+    raise ShopifyRequestError(
+        f"{last_message} Tentativi esauriti ({config.max_retries}).",
+        retryable=True,
+        status_code=last_status,
+    )
+
+
+def _sleep_before_retry(
+    attempt: int,
+    max_retries: int,
+    reason: str,
+    sleep: Sleep,
+    *,
+    status_code: int | None,
+    payload: dict[str, Any] | None,
+    transport_error: bool,
+    retry_after: float | None = None,
+    forced: bool = False,
+) -> bool:
+    if not forced and not should_retry(
+        status_code=status_code,
+        payload=payload,
+        attempt=attempt,
+        max_retries=max_retries,
+        transport_error=transport_error,
+    ):
+        return False
+    wait = backoff_seconds(
+        attempt,
+        retry_after=retry_after,
+        throttle_wait=throttle_wait_seconds(payload),
+    )
+    logger.warning(
+        "Tentativo %d/%d non riuscito (%s). Nuovo tentativo tra %.1f secondi.",
+        attempt,
+        max_retries,
+        reason,
+        wait,
+    )
+    sleep(wait)
+    return True
+
+
+def _token_failure_message(status_code: int, payload: dict[str, Any] | None) -> str:
+    if status_code in (401, 403):
+        return (
+            "Credenziali rifiutate. Controlla Client ID, Client secret e gli scope "
+            "read_customers,write_customers."
+        )
+    parts: list[str] = []
+    if isinstance(payload, dict):
+        for key in ("error", "error_description"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+    detail = f": {'; '.join(parts)}" if parts else ""
+    return f"Richiesta del token rifiutata (HTTP {status_code}){detail}."
+
+
 class ShopifyGraphQLClient:
     """Small Admin GraphQL client. One instance per run."""
 
@@ -183,6 +381,7 @@ class ShopifyGraphQLClient:
         self.api_version = config.api_version
         self.max_retries = config.max_retries
         self._sleep = sleep
+        self._secrets = (config.access_token, config.client_secret)
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         self._http = httpx.Client(
@@ -216,7 +415,7 @@ class ShopifyGraphQLClient:
                     continue
                 raise ShopifyRequestError(last_message, retryable=True, status_code=None) from exc
             except httpx.TransportError as exc:
-                last_message = f"API Shopify irraggiungibile: {redact(str(exc))}"
+                last_message = f"API Shopify irraggiungibile: {redact(str(exc), self._secrets)}"
                 last_status = None
                 if self._wait_for_retry(attempt, last_message, status_code=None, payload=None, transport_error=True):
                     continue
@@ -248,8 +447,8 @@ class ShopifyGraphQLClient:
             if response.status_code in (401, 403):
                 raise ShopifyRequestError(
                     _with_request_id(
-                        "Autenticazione rifiutata. Controlla il token e gli scope "
-                        "read_customers e write_customers.",
+                        "Autenticazione rifiutata. Controlla Client ID e Client secret, "
+                        "oppure il token Admin, e gli scope read_customers e write_customers.",
                         request_id,
                     ),
                     retryable=False,
@@ -281,7 +480,7 @@ class ShopifyGraphQLClient:
                     status_code=response.status_code,
                 )
             if response.status_code != 200 or payload is None:
-                body = redact(response.text[:300]) if response.text else ""
+                body = redact(response.text[:300], self._secrets) if response.text else ""
                 raise ShopifyRequestError(
                     _with_request_id(
                         f"Risposta Shopify non valida (HTTP {response.status_code}). {body}".strip(),
@@ -291,7 +490,7 @@ class ShopifyGraphQLClient:
                     status_code=response.status_code,
                 )
             if payload.get("errors"):
-                message = _graphql_error_message(payload)
+                message = _graphql_error_message(payload, self._secrets)
                 if is_throttled(payload):
                     message = f"{message}. Tentativi esauriti ({self.max_retries})."
                 raise ShopifyRequestError(
@@ -369,10 +568,10 @@ def _failure_reason(status_code: int, payload: dict[str, Any] | None) -> str:
     return f"HTTP {status_code}"
 
 
-def _graphql_error_message(payload: dict[str, Any]) -> str:
+def _graphql_error_message(payload: dict[str, Any], secrets: tuple[str, ...] = ()) -> str:
     errors = payload.get("errors")
     if isinstance(errors, str):
-        return redact(errors)
+        return redact(errors, secrets)
     if isinstance(errors, list):
         parts: list[str] = []
         for error in errors:
@@ -381,7 +580,7 @@ def _graphql_error_message(payload: dict[str, Any]) -> str:
             else:
                 parts.append(str(error))
         if parts:
-            return redact("; ".join(parts))
+            return redact("; ".join(parts), secrets)
     return "Errore GraphQL senza messaggio."
 
 

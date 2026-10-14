@@ -18,6 +18,7 @@ from early_access_tagger.config import (
     load_dotenv,
     parse_shopify_datetime,
 )
+from early_access_tagger.graphql_client import CUSTOMERS_QUERY
 from early_access_tagger.tagger import build_customer_search
 
 
@@ -88,6 +89,18 @@ class CustomerSearchTests(unittest.TestCase):
         self.assertIn("customer_date:>=", query)
 
 
+class CustomerSelectionTests(unittest.TestCase):
+    def test_query_requests_only_id_tags_and_created_at(self) -> None:
+        self.assertNotIn("email", CUSTOMERS_QUERY.lower())
+        self.assertNotIn("phone", CUSTOMERS_QUERY.lower())
+        self.assertNotIn("firstName", CUSTOMERS_QUERY)
+        self.assertNotIn("lastName", CUSTOMERS_QUERY)
+        self.assertNotIn("displayName", CUSTOMERS_QUERY)
+        self.assertIn("id", CUSTOMERS_QUERY)
+        self.assertIn("tags", CUSTOMERS_QUERY)
+        self.assertIn("createdAt", CUSTOMERS_QUERY)
+
+
 class ConfigTests(unittest.TestCase):
     def test_blank_env_uses_documented_defaults(self) -> None:
         config = load_config(
@@ -109,6 +122,44 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.start_date, parse_shopify_datetime(DEFAULT_START_DATE))
         self.assertEqual(config.end_date, parse_shopify_datetime(DEFAULT_END_DATE))
         self.assertEqual(config.query_extra, "")
+        self.assertEqual(config.access_token, "shpat_real_enough")
+        self.assertEqual(config.client_id, "")
+        self.assertEqual(config.client_secret, "")
+
+    def test_shop_host_is_kept_whole(self) -> None:
+        config = load_config(
+            {
+                "SHOPIFY_SHOP": "https://shinelux.myshopify.com/admin",
+                "SHOPIFY_CLIENT_ID": "real-client-id",
+                "SHOPIFY_CLIENT_SECRET": "real-client-secret",
+            }
+        )
+        self.assertEqual(config.shop, "shinelux.myshopify.com")
+        self.assertEqual(config.token_url, "https://shinelux.myshopify.com/admin/oauth/access_token")
+        self.assertNotIn(".myshopify.com.myshopify.com", config.shop)
+        self.assertTrue(config.uses_client_credentials)
+        self.assertEqual(config.access_token, "")
+
+    def test_client_credentials_or_static_token(self) -> None:
+        with self.assertRaises(ConfigError):
+            load_config({"SHOPIFY_SHOP": "shinelux.myshopify.com"})
+        with self.assertRaises(ConfigError):
+            load_config(
+                {
+                    "SHOPIFY_SHOP": "shinelux.myshopify.com",
+                    "SHOPIFY_CLIENT_ID": "only-the-id",
+                }
+            )
+        static = load_config(
+            {
+                "SHOPIFY_SHOP": "shinelux.myshopify.com",
+                "SHOPIFY_CLIENT_ID": "your_client_id",
+                "SHOPIFY_CLIENT_SECRET": "your_client_secret",
+                "SHOPIFY_ADMIN_ACCESS_TOKEN": "shpat_real_enough",
+            }
+        )
+        self.assertFalse(static.uses_client_credentials)
+        self.assertEqual(static.access_token, "shpat_real_enough")
 
     def test_date_only_end_covers_the_whole_utc_day(self) -> None:
         config = load_config(

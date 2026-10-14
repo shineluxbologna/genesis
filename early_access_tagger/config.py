@@ -22,6 +22,8 @@ _PLACEHOLDER_TOKENS = {
     "shpat_your_admin_api_token",
     "shpca_your_admin_api_token",
 }
+_PLACEHOLDER_CLIENT_IDS = {"your_client_id", "your-client-id"}
+_PLACEHOLDER_CLIENT_SECRETS = {"your_client_secret", "your-client-secret"}
 _SOURCE_TAG_DISABLED = {"-", "none", "off"}
 _API_VERSION_RE = re.compile(r"^\d{4}-\d{2}$|^unstable$")
 
@@ -33,19 +35,29 @@ class ConfigError(ValueError):
 @dataclass(frozen=True)
 class Config:
     shop: str
-    access_token: str
     api_version: str
     start_date: datetime
     end_date: datetime
     source_tag: str
     target_tag: str
     query_extra: str
+    access_token: str = ""
+    client_id: str = ""
+    client_secret: str = ""
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_retries: int = DEFAULT_MAX_RETRIES
 
     @property
     def graphql_url(self) -> str:
         return f"https://{self.shop}/admin/api/{self.api_version}/graphql.json"
+
+    @property
+    def token_url(self) -> str:
+        return f"https://{self.shop}/admin/oauth/access_token"
+
+    @property
+    def uses_client_credentials(self) -> bool:
+        return bool(self.client_id and self.client_secret)
 
 
 def load_dotenv(path: Path) -> None:
@@ -82,14 +94,24 @@ def load_config(
         environ = dict(os.environ)
 
     shop = _normalize_shop(_required(environ, "SHOPIFY_SHOP"))
-    token = _required(environ, "SHOPIFY_ADMIN_ACCESS_TOKEN")
     if shop in _PLACEHOLDER_SHOPS:
         raise ConfigError(
-            "Sostituisci SHOPIFY_SHOP con il dominio reale, per esempio nome-negozio.myshopify.com."
+            "Sostituisci SHOPIFY_SHOP con il dominio completo, per esempio shinelux.myshopify.com."
         )
-    if token in _PLACEHOLDER_TOKENS:
+    client_id = _ignore_placeholder(environ.get("SHOPIFY_CLIENT_ID"), _PLACEHOLDER_CLIENT_IDS)
+    client_secret = _ignore_placeholder(
+        environ.get("SHOPIFY_CLIENT_SECRET"),
+        _PLACEHOLDER_CLIENT_SECRETS,
+    )
+    token = _ignore_placeholder(environ.get("SHOPIFY_ADMIN_ACCESS_TOKEN"), _PLACEHOLDER_TOKENS)
+    if bool(client_id) != bool(client_secret):
         raise ConfigError(
-            "Sostituisci SHOPIFY_ADMIN_ACCESS_TOKEN con il token Admin della custom app."
+            "Servono entrambi SHOPIFY_CLIENT_ID e SHOPIFY_CLIENT_SECRET, oppure nessuno dei due."
+        )
+    if not client_id and not token:
+        raise ConfigError(
+            "Manca l'accesso a Shopify. Imposta SHOPIFY_CLIENT_ID e SHOPIFY_CLIENT_SECRET "
+            "(Dev Dashboard), oppure SHOPIFY_ADMIN_ACCESS_TOKEN."
         )
 
     api_version = _blank_as_missing(environ.get("SHOPIFY_API_VERSION")) or DEFAULT_API_VERSION
@@ -126,13 +148,15 @@ def load_config(
 
     return Config(
         shop=shop,
-        access_token=token,
         api_version=api_version,
         start_date=start_date,
         end_date=end_date,
         source_tag=source_tag,
         target_tag=target_tag,
         query_extra=query_extra,
+        access_token=token or "",
+        client_id=client_id or "",
+        client_secret=client_secret or "",
     )
 
 
@@ -170,12 +194,26 @@ def _blank_as_missing(value: str | None) -> str | None:
     return stripped or None
 
 
+def _ignore_placeholder(value: str | None, placeholders: set[str]) -> str | None:
+    cleaned = _blank_as_missing(value)
+    if cleaned is None or cleaned in placeholders:
+        return None
+    return cleaned
+
+
 def _normalize_shop(value: str) -> str:
+    """Keep the full host. Never append .myshopify.com."""
     shop = value.strip()
     shop = re.sub(r"^https?://", "", shop, flags=re.IGNORECASE)
     shop = shop.split("/")[0].strip()
     if "@" in shop or " " in shop or "." not in shop:
         raise ConfigError(
-            "SHOPIFY_SHOP deve essere il dominio del negozio, per esempio nome-negozio.myshopify.com."
+            "SHOPIFY_SHOP deve essere il dominio completo, per esempio shinelux.myshopify.com, "
+            "senza https://. Lo script non aggiunge .myshopify.com."
+        )
+    if shop.lower().count(".myshopify.com") > 1:
+        raise ConfigError(
+            "SHOPIFY_SHOP contiene .myshopify.com due volte. Scrivi solo il dominio completo, "
+            "per esempio shinelux.myshopify.com."
         )
     return shop
