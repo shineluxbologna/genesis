@@ -10,14 +10,16 @@ Lo script non indovina chi ha compilato il modulo. Il modulo (Shopify Forms, un 
 
 | | Valore di default | A cosa serve |
 | --- | --- | --- |
-| Tag del modulo | `form-early-access` | Già presente sul cliente. Chi non ce l'ha viene saltato, compresi gli acquirenti normali. |
+| Tag del modulo | `password page` | Già presente sul cliente. Chi non ce l'ha viene saltato, compresi gli acquirenti normali. |
 | Tag del segmento | `early access targa` | Lo aggiunge lo script, se manca. È il tag del segmento in Shopify. |
 
 I due tag non sono la stessa cosa. Il primo dice «questa persona viene dal modulo». Il secondo dice «questa persona entra nel segmento early access».
 
 Se il modulo mette un tag diverso, cambia `EARLY_ACCESS_SOURCE_TAG` e scrivi quel tag **identico**, maiuscole e spazi compresi. Se non usi un tag e vuoi filtrare in un altro modo, imposta `EARLY_ACCESS_SOURCE_TAG` a `-` e compila `CUSTOMER_QUERY_EXTRA` con un filtro di ricerca clienti, per esempio `tag:'lista-vip'`, `email:*@tuodominio.com` o `country:IT`. Senza almeno uno dei due filtri lo script si ferma: non tagga tutto il negozio.
 
-La ricerca clienti di questa versione API non elenca un filtro per le note. Se l'iscrizione finisce solo in una nota, fai mettere il tag `form-early-access` dal modulo o da un Flow.
+Sulla pagina password di shinelux.eu il modulo «REQUEST EARLY ACCESS» è un modulo cliente e scrive due tag: `prospect` e `password page`. Lo script filtra su `password page`, che è il tag proprio di quel modulo. `prospect` da solo non basta, perché non distingue questo modulo da altre iscrizioni.
+
+La ricerca clienti di questa versione API non elenca un filtro per le note. Se l'iscrizione finisce solo in una nota, fai mettere il tag `password page` dal modulo o da un Flow.
 
 In Shopify Admin crea il segmento a mano, una volta sola: **Clienti → Segmenti →** condizione sul tag cliente uguale a `early access targa`. Da quel momento il segmento si aggiorna perché ogni giorno arrivano clienti con quel tag.
 
@@ -69,7 +71,7 @@ Apri `.env` e sostituisci:
 
 `SHOPIFY_ADMIN_ACCESS_TOKEN` resta vuoto, a meno che tu non stia usando un token permanente al posto della coppia Client ID / Client secret.
 
-Le date e i tag hanno già un default sensato (dal 1 gennaio 2026 al 31 dicembre 2027, tag `form-early-access` e `early access targa`). Cambiali se la campagna è un'altra. Le date sono in UTC, formato ISO 8601. La finestra è inclusiva: entra chi è stato creato esattamente all'inizio o alla fine. Se scrivi solo il giorno, per esempio `2026-03-31`, conta l'intera giornata UTC.
+Le date e i tag hanno già un default sensato (dal 1 agosto 2026 al 31 dicembre 2027, tag `password page` e `early access targa`). Cambiali se la campagna è un'altra. Le date sono in UTC, formato ISO 8601. La finestra è inclusiva: entra chi è stato creato esattamente all'inizio o alla fine. Se scrivi solo il giorno, per esempio `2026-03-31`, conta l'intera giornata UTC.
 
 Poi:
 
@@ -112,9 +114,9 @@ Lo schedule parte solo dopo che questo file è su `main`. Il workflow si chiama 
    - Nome `SHOPIFY_CLIENT_SECRET`, valore il Client secret copiato da **Settings**
    - `SHOPIFY_ADMIN_ACCESS_TOKEN` è facoltativo. Crearlo solo se usi un token permanente e non la coppia Client ID / Client secret. Lo script, se trova Client ID e Client secret, chiede il token da solo.
 5. Scheda **Variables**, pulsante **New repository variable**. Non sono segreti: sono la finestra e i tag. Se non le crei, valgono i default del programma.
-   - `START_DATE` = `2026-01-01T00:00:00Z`
+   - `START_DATE` = `2026-08-01T00:00:00Z`
    - `END_DATE` = `2027-12-31T23:59:59Z`
-   - `EARLY_ACCESS_SOURCE_TAG` = `form-early-access`
+   - `EARLY_ACCESS_SOURCE_TAG` = `password page`
    - `TARGET_TAG` = `early access targa`
    - opzionale `CUSTOMER_QUERY_EXTRA`, vuoto oppure un filtro come `country:IT`
    - opzionale `SHOPIFY_API_VERSION` = `2026-10`

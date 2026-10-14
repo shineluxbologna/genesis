@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_API_VERSION = "2026-10"
-DEFAULT_START_DATE = "2026-01-01T00:00:00Z"
+DEFAULT_START_DATE = "2026-08-01T00:00:00Z"
 DEFAULT_END_DATE = "2027-12-31T23:59:59Z"
-DEFAULT_SOURCE_TAG = "form-early-access"
+DEFAULT_SOURCE_TAG = "password page"
 DEFAULT_TARGET_TAG = "early access targa"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 5
