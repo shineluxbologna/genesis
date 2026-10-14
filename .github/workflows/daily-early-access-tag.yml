@@ -1,0 +1,46 @@
+name: Tag early access giornaliero
+
+on:
+  schedule:
+    # Ogni giorno alle 06:00 UTC. GitHub può ritardare di qualche minuto.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: early-access-tagger
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUNBUFFERED: "1"
+      SHOPIFY_SHOP: ${{ secrets.SHOPIFY_SHOP }}
+      SHOPIFY_ADMIN_ACCESS_TOKEN: ${{ secrets.SHOPIFY_ADMIN_ACCESS_TOKEN }}
+      SHOPIFY_API_VERSION: ${{ vars.SHOPIFY_API_VERSION }}
+      START_DATE: ${{ vars.START_DATE }}
+      END_DATE: ${{ vars.END_DATE }}
+      EARLY_ACCESS_SOURCE_TAG: ${{ vars.EARLY_ACCESS_SOURCE_TAG }}
+      TARGET_TAG: ${{ vars.TARGET_TAG }}
+      CUSTOMER_QUERY_EXTRA: ${{ vars.CUSTOMER_QUERY_EXTRA }}
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Prepara Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa le dipendenze
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Controlla i test
+        run: python -m unittest
+
+      - name: Aggiunge il tag ai clienti del modulo
+        run: python -m early_access_tagger
