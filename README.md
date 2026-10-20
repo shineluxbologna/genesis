@@ -101,7 +101,7 @@ python -m unittest
 
 È la strada da usare. GitHub esegue lo script una volta al giorno anche se il computer è spento. Non serve un server.
 
-Lo schedule parte solo dopo che questo file è su `main`. Il workflow si chiama **Tag early access giornaliero** e sta in `.github/workflows/daily-early-access-tag.yml`. Parte alle 06:00 UTC (le 8:00 in Italia con l'ora legale, le 7:00 in inverno) e si può lanciare anche a mano. GitHub a volte ritarda di qualche minuto gli orari programmati: è normale.
+Lo schedule parte solo dopo che questo file è su `main`. Il workflow si chiama **Tag early access giornaliero** e sta in `.github/workflows/daily-early-access-tag.yml`. Parte ogni giorno alle 06:00 CET (05:00 UTC), che sono le 07:00 in Italia mentre è in vigore l'ora legale (CEST, UTC+2), e si può lanciare anche a mano. GitHub a volte ritarda di qualche minuto gli orari programmati: è normale.
 
 ### Segreti e variabili
 
@@ -139,10 +139,10 @@ Lo step precedente lancia i test. Se quelli falliscono, lo script non parte e ne
 Apri `.github/workflows/daily-early-access-tag.yml` e modifica solo la riga del cron:
 
 ```yaml
-- cron: "0 6 * * *"
+- cron: "0 5 * * *"
 ```
 
-I cinque campi sono minuto, ora, giorno, mese, giorno della settimana, in UTC. `0 6 * * *` significa ogni giorno alle 06:00 UTC. Per le 07:00 UTC scrivi `0 7 * * *`. Salva, fai commit e merge su `main`: finché la modifica non è sul branch predefinito, GitHub continua a usare l'orario vecchio.
+I cinque campi sono minuto, ora, giorno, mese, giorno della settimana, in UTC. `0 5 * * *` significa ogni giorno alle 06:00 CET (05:00 UTC), che sono le 07:00 in Italia mentre è in vigore l'ora legale (CEST, UTC+2). Per le 07:00 UTC scrivi `0 7 * * *`. Salva, fai commit e merge su `main`: finché la modifica non è sul branch predefinito, GitHub continua a usare l'orario vecchio.
 
 ## Alternativa: cron su un Linux sempre acceso
 
@@ -151,10 +151,10 @@ Usa questa strada solo se hai già una macchina accesa tutta la notte. GitHub Ac
 Sul server, nella cartella del progetto, crea il venv e il file `.env` come nella sezione «Esecuzione sul tuo computer». Poi `crontab -e` e aggiungi una riga con percorsi assoluti (qui è un esempio: metti i tuoi):
 
 ```cron
-0 6 * * * cd /home/sami/genesis && /home/sami/genesis/.venv/bin/python -m early_access_tagger >> /home/sami/genesis/early-access-tagger.log 2>&1
+0 5 * * * cd /home/sami/genesis && /home/sami/genesis/.venv/bin/python -m early_access_tagger >> /home/sami/genesis/early-access-tagger.log 2>&1
 ```
 
-Anche questo è alle 06:00 UTC, se il fuso del server è UTC. Il log cresce nel file `early-access-tagger.log`. Controllalo con `tail -n 50 /home/sami/genesis/early-access-tagger.log` e cerca le stesse frasi `Trovati` e `Tag aggiunto`.
+Anche questo è alle 05:00 UTC (06:00 CET), se il fuso del server è UTC. Con l'ora legale (CEST, UTC+2) sono le 07:00 in Italia. Il log cresce nel file `early-access-tagger.log`. Controllalo con `tail -n 50 /home/sami/genesis/early-access-tagger.log` e cerca le stesse frasi `Trovati` e `Tag aggiunto`.
 
 ## Versione API e limiti di richieste
 
