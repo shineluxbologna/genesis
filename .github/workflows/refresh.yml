@@ -8,6 +8,8 @@ permissions:
   contents: read
   issues: write
 
+# Il repository è pubblico: l'issue AGGIORNA parte solo dal proprietario,
+# da un collaboratore, o da cursor[bot] (chat del Project). Nessun dato cliente.
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -19,12 +21,21 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
           REPO_OWNER: ${{ github.repository_owner }}
+          AUTHOR_ASSOCIATION: ${{ github.event.issue.author_association }}
         run: |
           set -euo pipefail
           normalized="$(printf '%s' "$ISSUE_TITLE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
           author="$(printf '%s' "$ISSUE_AUTHOR" | tr '[:upper:]' '[:lower:]')"
           owner="$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')"
-          if [ "$normalized" = "aggiorna" ] && [ "$author" = "$owner" ]; then
+          association="$(printf '%s' "$AUTHOR_ASSOCIATION" | tr '[:upper:]' '[:lower:]')"
+          trusted=0
+          if [ "$author" = "$owner" ] || [ "$author" = "cursor[bot]" ]; then
+            trusted=1
+          fi
+          case "$association" in
+            owner|member|collaborator) trusted=1 ;;
+          esac
+          if [ "$normalized" = "aggiorna" ] && [ "$trusted" = 1 ]; then
             echo "match=true" >> "$GITHUB_OUTPUT"
           else
             echo "match=false" >> "$GITHUB_OUTPUT"
