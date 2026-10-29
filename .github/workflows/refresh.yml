@@ -1,0 +1,51 @@
+name: Aggiorna da issue AGGIORNA
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      match: ${{ steps.check.outputs.match }}
+    steps:
+      - id: check
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          normalized="$(printf '%s' "$ISSUE_TITLE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')"
+          author="$(printf '%s' "$ISSUE_AUTHOR" | tr '[:upper:]' '[:lower:]')"
+          owner="$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')"
+          if [ "$normalized" = "aggiorna" ] && [ "$author" = "$owner" ]; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  tag:
+    needs: gate
+    if: needs.gate.outputs.match == 'true'
+    uses: ./.github/workflows/daily-early-access-tag.yml
+    secrets: inherit
+
+  close:
+    needs: gate
+    if: needs.gate.outputs.match == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chiude l'issue AGGIORNA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh issue close "$ISSUE_NUMBER" --reason completed --comment "Aggiornamento avviato: stesso job del tagger quotidiano. Questa issue si chiude da sola e non contiene dati dei clienti."

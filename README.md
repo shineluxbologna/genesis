@@ -103,6 +103,16 @@ python -m unittest
 
 Lo schedule parte solo dopo che questo file è su `main`. Il workflow si chiama **Tag early access giornaliero** e sta in `.github/workflows/daily-early-access-tag.yml`. Parte ogni giorno alle 06:00 CET (05:00 UTC), che sono le 07:00 in Italia mentre è in vigore l'ora legale (CEST, UTC+2), e si può lanciare anche a mano. GitHub a volte ritarda di qualche minuto gli orari programmati: è normale.
 
+### Pulsante Aggiorna dal telefono
+
+Il bottone sulla schermata Home è questo link (issue già compilata):
+
+https://github.com/shineluxbologna/genesis/issues/new?title=AGGIORNA&body=Aggiorna%20i%20tag
+
+Passi: apri l’URL mentre sei collegato come **shineluxbologna** → **Submit** / **Crea issue**. Quello è l’Aggiorna: parte lo stesso job del cron, poi l’issue si chiude da sola. Non contiene dati dei clienti.
+
+Scrivere **AGGIORNA** nella chat Cursor del Project EARLY ACCESS fa la stessa cosa, quando il Project è online.
+
 ### Segreti e variabili
 
 1. Apri il repository su GitHub.

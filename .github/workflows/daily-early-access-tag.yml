@@ -5,6 +5,7 @@ on:
     # Ogni giorno alle 06:00 CET (05:00 UTC). In ora legale (CEST, UTC+2) sono le 07:00 in Italia. GitHub può ritardare di qualche minuto.
     - cron: "0 5 * * *"
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: early-access-tagger
